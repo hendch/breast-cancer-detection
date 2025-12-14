@@ -1,32 +1,18 @@
 project:
-  name: breast-cancer-mlops
   random_state: 42
   test_size: 0.2
 
-data:
-  dataset: wdbc
-  scale: true
+mlp:
+  hidden_layers: [256, 256, 256]
+  dropout: 0.3
+  learning_rate: 0.0001
+  batch_size: 16
+  epochs: 300
 
-run:
-  mode: paper
-  compare_with_tuned: true
-  models:
-    paper:
-      - knn
+  early_stopping:
+    enabled: true
+    monitor: val_loss
+    patience: 30
+    restore_best_weights: true
 
-models:
-  knn:
-    n_neighbors: 5
-  svm:
-    C: 5
-    kernel: linear
-tuned:
-  knn:
-    n_neighbors: 7
-  svm:
-    C: 10
-evaluation:
-  cv_folds: 5
-  shuffle: true
-
-
+  validation_split: 0.1
