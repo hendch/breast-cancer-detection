@@ -1,0 +1,2 @@
+model,run_mode,accuracy,precision,recall,f1_score
+knn,tuned,0.9736842105263158,0.96,1.0,0.9795918367346939

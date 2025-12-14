@@ -1,0 +1,32 @@
+project:
+  name: breast-cancer-mlops
+  random_state: 42
+  test_size: 0.2
+
+data:
+  dataset: wdbc
+  scale: true
+
+run:
+  mode: paper
+  compare_with_tuned: true
+  models:
+    paper:
+      - knn
+
+models:
+  knn:
+    n_neighbors: 5
+  svm:
+    C: 5
+    kernel: linear
+tuned:
+  knn:
+    n_neighbors: 7
+  svm:
+    C: 10
+evaluation:
+  cv_folds: 5
+  shuffle: true
+
+
