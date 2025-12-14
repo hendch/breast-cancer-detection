@@ -16,3 +16,29 @@ mlp:
     restore_best_weights: true
 
   validation_split: 0.1
+
+svm:
+  C: 10
+  gamma: "scale"
+  kernel: "rbf"
+  probability: false
+
+linear_regression:
+  best_params:
+    degree: 1
+    alpha: 0.01
+
+softmax_regression:
+  best_params:
+    C: 1.0
+    solver: "liblinear"
+
+gru_svm:
+  best_params:
+    units: 32
+    layers: 1
+    dropout: 0.3
+    learning_rate: 0.001
+    batch_size: 16
+    epochs: 200
+

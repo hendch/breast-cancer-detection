@@ -2,12 +2,14 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import json
+import matplotlib.pyplot as plt
+import numpy as np
 
 # --------------------------
 # Page config + small CSS
 # --------------------------
 st.set_page_config(
-    page_title="Breast Cancer Detection — MLP Dashboard",
+    page_title="Breast Cancer Detection — Models Dashboard",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
@@ -39,190 +41,7 @@ def signed_pct(delta: float) -> str:
     sign = "+" if delta >= 0 else ""
     return f"{sign}{delta*100:.2f}%"
 
-import matplotlib.pyplot as plt
-import numpy as np
-
-def plot_paper_vs_ours(paper: dict, run: dict):
-    metrics = [
-        ("accuracy", "Accuracy"),
-        ("tpr", "TPR (Recall)"),
-        ("tnr", "TNR (Specificity)"),
-        ("fpr", "FPR"),
-        ("fnr", "FNR"),
-    ]
-
-    labels = [m[1] for m in metrics]
-    paper_vals = [paper[m[0]] for m in metrics]
-    ours_vals = [run[m[0]] for m in metrics]
-
-    x = np.arange(len(labels))
-    width = 0.35
-
-    fig, ax = plt.subplots(figsize=(7, 3.2))
-    ax.bar(x - width/2, paper_vals, width, label="Paper", alpha=0.8)
-    ax.bar(x + width/2, ours_vals, width, label="Ours", alpha=0.8)
-
-    ax.set_ylabel("Score")
-    ax.set_ylim(0.9 if "fpr" not in labels else 0.0, 1.01)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels, rotation=15)
-    ax.legend()
-    ax.grid(axis="y", alpha=0.3)
-
-    fig.tight_layout()
-    return fig
-
-
-# --------------------------
-# Load data
-# --------------------------
-ROOT = Path(__file__).resolve().parents[1]  # project root
-
-PAPER_PATH = ROOT / "assets" / "paper_metrics.json"
-RUN_PATH = ROOT / "results" / "latest_metrics.json"
-
-def normalize_metrics(obj: dict | list, *, top_key: str | None = None) -> dict:
-    """
-    Accepts:
-      - dict with metrics at top-level
-      - dict wrapped under a key (e.g. {"mlp": {...}})
-      - list of runs (uses last element)
-    Returns: dict of metrics at top-level.
-    """
-    # list -> last run
-    if isinstance(obj, list):
-        if not obj:
-            raise ValueError("Metrics JSON is an empty list.")
-        obj = obj[-1]
-
-    if not isinstance(obj, dict):
-        raise TypeError(f"Metrics JSON must be dict or list, got {type(obj)}")
-
-    # unwrap under a top key (like "mlp") if present
-    if top_key and top_key in obj and isinstance(obj[top_key], dict):
-        obj = obj[top_key]
-
-    return obj
-
-paper_raw = load_json(PAPER_PATH)
-run_raw = load_json(RUN_PATH)
-
-paper = normalize_metrics(paper_raw, top_key="mlp")
-run = normalize_metrics(run_raw)  # no wrapper expected; handles list case
-
-# Optional: fail early with a clear error instead of KeyError later
-required = {"accuracy", "tpr", "tnr", "fpr", "fnr"}
-missing_p = required - set(paper.keys())
-missing_r = required - set(run.keys())
-if missing_p:
-    st.error(f"paper_metrics.json missing keys: {sorted(missing_p)}. Loaded keys: {sorted(paper.keys())}")
-    st.stop()
-if missing_r:
-    st.error(f"latest_metrics.json missing keys: {sorted(missing_r)}. Loaded keys: {sorted(run.keys())}")
-    st.stop()
-
-
-
-# Metrics keys you compare
-METRICS = [
-    ("Accuracy", "accuracy"),
-    ("TPR (Recall)", "tpr"),
-    ("TNR (Specificity)", "tnr"),
-    ("FPR", "fpr"),
-    ("FNR", "fnr"),
-]
-
-# Build comparison table
-rows = []
-for label, key in METRICS:
-    p = paper.get(key, None)
-    r = run.get(key, None)
-    if p is None or r is None:
-        continue
-    rows.append(
-        {
-            "Metric": label,
-            "Paper": p,
-            "Ours": r,
-            "Δ (Ours - Paper)": r - p,
-        }
-    )
-
-df = pd.DataFrame(rows)
-
-# --------------------------
-# Header
-# --------------------------
-st.title("Breast Cancer Detection — MLP")
-st.caption("Static paper metrics vs. latest deployed MLP run (WDBC).")
-
-# --------------------------
-# KPI row (top)
-# --------------------------
-kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-
-paper_acc = paper["accuracy"]
-ours_acc = run["accuracy"]
-kpi1.metric("Accuracy", fmt_pct(ours_acc), signed_pct(ours_acc - paper_acc))
-
-paper_fnr = paper["fnr"]
-ours_fnr = run["fnr"]
-kpi2.metric("FNR (Missed cancers)", fmt_pct(ours_fnr), signed_pct(ours_fnr - paper_fnr))
-
-paper_tpr = paper["tpr"]
-ours_tpr = run["tpr"]
-kpi3.metric("TPR (Recall)", fmt_pct(ours_tpr), signed_pct(ours_tpr - paper_tpr))
-
-paper_tnr = paper["tnr"]
-ours_tnr = run["tnr"]
-kpi4.metric("TNR (Specificity)", fmt_pct(ours_tnr), signed_pct(ours_tnr - paper_tnr))
-
-st.divider()
-
-# --------------------------
-# Main area: Tabs (reduces scrolling)
-# --------------------------
-tab1, tab2, tab3 = st.tabs(["Comparison", "Plots", "Run details"])
-
-with tab1:
-    left, right = st.columns([1.1, 0.9], gap="large")
-
-    with left:
-        st.subheader("Metric comparison")
-        # Show formatted table
-        pretty = df.copy()
-        pretty["Paper"] = pretty["Paper"].map(fmt_pct)
-        pretty["Ours"] = pretty["Ours"].map(fmt_pct)
-        pretty["Δ (Ours - Paper)"] = pretty["Δ (Ours - Paper)"].map(signed_pct)
-        st.dataframe(pretty, use_container_width=True, hide_index=True)
-
-    with right:
-        st.subheader("Quick notes")
-        st.write(
-            "- Paper metrics are stored as a static reference.\n"
-            "- “Ours” metrics come from the latest exported model run.\n"
-            "- FNR matters clinically (missed malignant cases)."
-        )
-
-with tab2:
-    st.subheader("Paper vs Ours (compact view)")
-
-    # Native Streamlit chart (quick overview)
-    plot_df = df[["Metric", "Paper", "Ours"]].set_index("Metric")
-    st.bar_chart(plot_df, height=260, use_container_width=True)
-
-    st.subheader("Delta (Ours - Paper)")
-    delta_df = df[["Metric", "Δ (Ours - Paper)"]].set_index("Metric")
-    st.bar_chart(delta_df, height=200, use_container_width=True)
-
-    st.divider()
-
-    st.subheader("Paper vs Ours — scale-aware comparison")
-
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-    # Split metrics by scale
+def plot_scale_aware(df):
     high_metrics = ["Accuracy", "TPR (Recall)", "TNR (Specificity)"]
     low_metrics = ["FPR", "FNR"]
 
@@ -231,45 +50,173 @@ with tab2:
 
     fig, axes = plt.subplots(
         1, 2,
-        figsize=(8, 3),   # compact figure
+        figsize=(8, 3),
         constrained_layout=True
     )
 
-    # High-rate metrics
+    # -------------------------
+    # High metrics
+    # -------------------------
     x = np.arange(len(high_df))
     axes[0].bar(x - 0.15, high_df["Paper"], width=0.3, label="Paper")
     axes[0].bar(x + 0.15, high_df["Ours"], width=0.3, label="Ours")
     axes[0].set_xticks(x)
     axes[0].set_xticklabels(high_df["Metric"], rotation=20)
-    axes[0].set_ylim(0.94, 1.0)
     axes[0].set_title("Performance metrics")
     axes[0].legend(fontsize=8)
 
-    # Error metrics
+    # Dynamic y-scale
+    min_val = min(high_df["Paper"].min(), high_df["Ours"].min())
+    max_val = max(high_df["Paper"].max(), high_df["Ours"].max())
+    lower = max(0.0, min_val - 0.03)
+    upper = min(1.0, max_val + 0.01)
+    axes[0].set_ylim(lower, upper)
+
+    # -------------------------
+    # Low metrics
+    # -------------------------
     x = np.arange(len(low_df))
     axes[1].bar(x - 0.15, low_df["Paper"], width=0.3, label="Paper")
     axes[1].bar(x + 0.15, low_df["Ours"], width=0.3, label="Ours")
     axes[1].set_xticks(x)
     axes[1].set_xticklabels(low_df["Metric"])
-    axes[1].set_ylim(
-        0,
-        max(low_df["Paper"].max(), low_df["Ours"].max()) * 1.4
-    )
     axes[1].set_title("Error metrics (lower is better)")
+    axes[1].set_ylim(0, max(low_df["Paper"].max(), low_df["Ours"].max()) * 1.4)
 
-    st.pyplot(fig)
+    return fig
 
+# --------------------------
+# Load paper + runtime
+# --------------------------
+ROOT = Path(__file__).resolve().parents[1]
 
-with tab3:
-    st.subheader("Run metadata")
+PAPER_PATH = ROOT / "assets" / "paper_metrics.json"
+RESULTS_DIR = ROOT / "results"
 
-    meta_cols = st.columns(3)
-    meta_cols[0].write(f"**Timestamp:** {run.get('timestamp', '-')}")
-    meta_cols[1].write(f"**Random state:** {run.get('random_state', '-')}")
-    meta_cols[2].write(f"**Trained epochs:** {run.get('trained_epochs', '-')}")
+paper_all = load_json(PAPER_PATH)
 
-    with st.expander("Show full config"):
-        st.json(run.get("config", {}))
+# Detect available models
+AVAILABLE = {
+    "mlp": "latest_mlp.json",
+    "svm": "latest_svm.json",
+    "linear_regression": "latest_linear_regression.json",
+    "softmax_regression": "latest_softmax_regression.json",
+    "gru_svm": "latest_gru_svm.json"
+}
 
-    with st.expander("Show raw JSON"):
-        st.json(run)
+available_models = [
+    model for model, file in AVAILABLE.items()
+    if (RESULTS_DIR / file).exists()
+]
+
+if not available_models:
+    st.error("No trained model results found in /results. Run training first.")
+    st.stop()
+
+st.title("Breast Cancer Detection — Model Comparison Dashboard")
+st.caption("Dynamically showing models with available results.")
+
+model_tabs = st.tabs(available_models)
+
+# --------------------------
+# Loop over models
+# --------------------------
+for model_name, tab in zip(available_models, model_tabs):
+
+    with tab:
+        st.header(model_name.upper())
+
+        # ----- Load paper metrics -----
+        if model_name not in paper_all:
+            st.error(f"paper_metrics.json has no entry for '{model_name}'.")
+            st.stop()
+
+        paper = paper_all[model_name]
+
+        # ----- Load results -----
+        run_path = RESULTS_DIR / AVAILABLE[model_name]
+        run = load_json(run_path)
+
+        # ----- Build comparison table -----
+        METRICS = [
+            ("Accuracy", "accuracy"),
+            ("TPR (Recall)", "tpr"),
+            ("TNR (Specificity)", "tnr"),
+            ("FPR", "fpr"),
+            ("FNR", "fnr"),
+        ]
+
+        rows = []
+        for lbl, key in METRICS:
+            rows.append(
+                {
+                    "Metric": lbl,
+                    "Paper": paper[key],
+                    "Ours": run[key],
+                    "Δ (Ours - Paper)": run[key] - paper[key],
+                }
+            )
+        df = pd.DataFrame(rows)
+
+        # --------------------------
+        # KPI Row
+        # --------------------------
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Accuracy", fmt_pct(run["accuracy"]), signed_pct(run["accuracy"] - paper["accuracy"]))
+        k2.metric("FNR", fmt_pct(run["fnr"]), signed_pct(run["fnr"] - paper["fnr"]))
+        k3.metric("TPR", fmt_pct(run["tpr"]), signed_pct(run["tpr"] - paper["tpr"]))
+        k4.metric("TNR", fmt_pct(run["tnr"]), signed_pct(run["tnr"] - paper["tnr"]))
+
+        st.divider()
+
+        # --------------------------
+        # Sub-tabs inside each model
+        # --------------------------
+        comp, plots, meta = st.tabs(["Comparison", "Plots", "Run details"])
+
+        # ===== COMPARISON TABLE =====
+        with comp:
+            st.subheader("Metric comparison")
+            pretty = df.copy()
+            pretty["Paper"] = pretty["Paper"].map(fmt_pct)
+            pretty["Ours"] = pretty["Ours"].map(fmt_pct)
+            pretty["Δ (Ours - Paper)"] = pretty["Δ (Ours - Paper)"].map(signed_pct)
+
+            st.dataframe(pretty, use_container_width=True, hide_index=True)
+
+        # ===== PLOTS =====
+        with plots:
+            st.subheader("Paper vs Ours (simple view)")
+            st.bar_chart(
+                df[["Metric", "Paper", "Ours"]].set_index("Metric"),
+                height=260,
+                use_container_width=True
+            )
+
+            st.subheader("Delta (Ours - Paper)")
+            st.bar_chart(
+                df[["Metric", "Δ (Ours - Paper)"]].set_index("Metric"),
+                height=200,
+                use_container_width=True
+            )
+
+            st.divider()
+
+            st.subheader("Scale-aware comparison")
+            fig = plot_scale_aware(df)
+            st.pyplot(fig)
+
+        # ===== METADATA =====
+        with meta:
+            st.subheader("Run metadata")
+
+            c1, c2, c3 = st.columns(3)
+            c1.write(f"**Timestamp:** {run.get('timestamp', '-')}")
+            c2.write(f"**Random state:** {run.get('random_state', '-')}")
+            c3.write(f"**Trained epochs:** {run.get('trained_epochs', '-')}")
+
+            with st.expander("Show full config"):
+                st.json(run.get("config", {}))
+
+            with st.expander("Show raw JSON"):
+                st.json(run)
